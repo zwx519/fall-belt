@@ -1,0 +1,564 @@
+C51 COMPILER V9.00   MAIN                                                                  01/23/2020 12:20:22 PAGE 1   
+
+
+C51 COMPILER V9.00, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN main.OBJ
+COMPILER INVOKED BY: D:\keil5\C51\BIN\C51.EXE main.c OPTIMIZE(8,SPEED) BROWSE DEBUG OBJECTEXTEND TABS(2)
+
+line level    source
+
+   1          #include<reg52.h> //°üº¬Í·ÎÄ¼þ£¬Ò»°ãÇé¿ö²»ÐèÒª¸Ä¶¯£¬Í·ÎÄ¼þ°üº¬ÌØÊâ¹¦ÄÜ¼Ä´æÆ÷µÄ¶¨Òå
+   2          #include<stdio.h>
+   3          #include "delay.h"
+   4          #include "math.h"
+   5          #include "adxl345.h"
+   6          
+   7          #define STAGE_SOHE  0x01
+   8          #define STAGE_TYPE  0x02
+   9          #define STAGE_NONE  0x03
+  10          #define STAGE_DATA  0x04
+  11          
+  12          sbit buzzer=P2^1;
+  13          sbit LED=P2^2;
+  14          sbit key=P2^0;
+  15          sbit qinang=P2^4;
+  16          
+  17          unsigned char ReadAdxl345;     //¶¨Ê±¶ÁÈ¡adxl345Êý¾Ý
+  18          char displaytemp[16];    //  ÏÔÊ¾ÔÝ´æ ·½±ãµ÷ÊÔ
+  19          unsigned long time_20ms=0;  //  ÏµÍ³¶¨Ê±¼ÆÊý
+  20          unsigned long keyLater=3;  //°´¼üÑÓÊ±¼ÆÊý
+  21          unsigned int ReportLater=0; //ÉÏ±¨ÑÓÊ±
+  22          char Crtl_Z[1]={0x1a};     //·¢ËÍ¶ÌÐÅ×îºó×Ö½Ú
+  23          unsigned char i; 
+  24          
+  25          xdata unsigned char Lin0_No[13]="N:000.000000";//ÏÔÊ¾±±Î³
+  26          xdata unsigned char Lin1_Ea[12]="E:000.000000";//ÏÔÊ¾¶«¾­
+  27          
+  28          unsigned char xdata devide_flag;            //GPSÊý¾Ý¶ººÅ·Ö¸ô·û
+  29          unsigned char xdata speed_end;      //ÊÕËÙ¶ÈÊý¾Ý½áÊø±êÖ¾
+  30          unsigned char xdata dir_end;      //ÊÕ·½Ïò½ÇÊý¾Ý½áÊø±êÖ¾
+  31          unsigned char xdata  sysmode_GPS=FALSE;                    //gpsÓÐÐ§ÎÞÐ§±êÖ¾
+  32          unsigned char xdata ew_flag;                        //¶«Î÷±êÖ¾
+  33          unsigned char xdata ns_flag;                        //ÄÏ±±±êÖ¾
+  34          
+  35          unsigned char xdata gps_infor_weijing[17];    //ÔÝ´æ¾­Î³¶È ¸ñÊ½ÊÇÒÔ¶È·ÖÃëµÄÊÇÐÎÊ½
+  36          unsigned char xdata gps_infor_speed[4];       //ÔÝ´æËÙÂÊ
+  37          unsigned char xdata gps_infor_time[6];        //Ê±¼äÔÝ´æ
+  38          unsigned char xdata gps_infor_date[6];        //ÈÕÆÚÔÝ´æ
+  39          unsigned char xdata gps_infor_dir[3];         //·½ÏòÔÝ´æ
+  40          
+  41          unsigned char xdata recv1_step=STAGE_SOHE;                       //´®¿Ú½ÓÊÕÖ¸Áî²½Öè
+  42          unsigned char xdata uart1_r_buf;                       //´®¿ÚµÄ»º´æ
+  43          unsigned char xdata rev1_buf_busy;                    //´®¿Ú½ÓÊÕÃ¦Âµ±êÖ¾
+  44          unsigned char xdata temp1_buf[85];                   //´®¿Ú½ÓÊÕÊý×é
+  45          unsigned int  xdata record1=0;            //´®¿Ú½ÓÊÕ¼ÆÊý
+  46          unsigned char dealGpsMes = 0;
+  47          void Init_Timer0(void); //º¯ÊýÉùÃ÷
+  48          void uartSendStr(unsigned char *s,unsigned char length);
+  49          void UART_Init(void);
+  50          void uartSendByte(unsigned char dat);
+  51          void gpsDealfun(void);
+  52          
+  53          void main (void)
+  54          {     
+  55   1        static unsigned char ErrorNum=0;   //adxl345Êý¾ÝÅÐ¶Ï½á¹û¼ÆÊý
+C51 COMPILER V9.00   MAIN                                                                  01/23/2020 12:20:22 PAGE 2   
+
+  56   1        static unsigned char CheckNum=0;
+  57   1        Init_Timer0();        //¶¨Ê±Æ÷0³õÊ¼»¯
+  58   1        UART_Init();
+  59   1        LED=0;
+  60   1        DelayMs(20);          //ÑÓÊ±ÓÐÖúÓÚÎÈ¶¨
+  61   1        Init_ADXL345();   //ÇåÆÁ
+  62   1        if(Single_Read_ADXL345(0X00)==0xe5) //¶Á³öµÄÊý¾ÝÎª0XE5,±íÊ¾ÕýÈ·
+  63   1        {
+  64   2          DelayMs(5);
+  65   2          uartSendStr("ready ok",8);//ÏÔÊ¾µÚ¶þÐÐ
+  66   2        }
+  67   1        else
+  68   1        {
+  69   2          DelayMs(3);
+  70   2        }
+  71   1      
+  72   1        for(i=0;i<10;i++)
+  73   1        DelayMs(100);          //ÑÓÊ±ÓÐÖúÓÚÎÈ¶¨
+  74   1      
+  75   1        uartSendStr("AT+CMGF=1\r\n",11);   //ÉèÖÃ×Ö·û
+  76   1        for(i=0;i<7;i++)
+  77   1          DelayMs(100);          //ÑÓÊ±ÓÐÖúÓÚÎÈ¶¨
+  78   1      
+  79   1        buzzer=1;
+  80   1        qinang=1;
+  81   1        LED=1;
+  82   1        ReportLater=0;
+  83   1        while (1)         //Ö÷Ñ­»·
+  84   1        {
+  85   2          if(dealGpsMes>2)   //gpsÐÅÏ¢´¦Àí
+  86   2          {
+  87   3            dealGpsMes=0;  //Çå³ý±êÖ¾
+  88   3            gpsDealfun();    //gpsÐÅÏ¢´¦Àíº¯Êý
+  89   3          }
+  90   2      
+  91   2            if(ReadAdxl345==TRUE)   //¶¨Ê±¶ÁÈ¡adxl345Êý¾Ý
+  92   2            {
+  93   3            ReadAdxl345=FALSE;
+  94   3            ReadData_x();             //ÈýÖá¼ì²âº¯Êý
+  95   3            CheckNum++;
+  96   3            if((temp_X<550)||(abs(temp_Y)>750))       //·½Î»ÖµÅÐ¶Ï ²é¿´Õý³£´ÎÊý
+  97   3            {
+  98   4              ErrorNum++;
+  99   4            }
+ 100   3            if(CheckNum>=5)     //½øÐÐ5´Î´¦Àí
+ 101   3            {
+ 102   4              if(keyLater>=3)     //·Ç°´¼üÏÂ
+ 103   4              {
+ 104   5                if(ErrorNum>1)     //½Ç¶È³öÏÖ´íÎó 5´Î³öÏ¢3´ÎÇé¿ö
+ 105   5                {
+ 106   6                  buzzer=0;    //´ò¿ª·äÃùÆ÷
+ 107   6                  qinang=0;      //´ò¿ªÆøÄÒ
+ 108   6                }
+ 109   5                else
+ 110   5                {         
+ 111   6                  buzzer=1;   //¹Ø±Õ·äÃùÆ÷
+ 112   6                  qinang=1;
+ 113   6                  ReportLater=0;    //ÉÏ±¨ÑÓÊ±¼ÆÊý
+ 114   6                }         
+ 115   5              }
+ 116   4            
+ 117   4              ErrorNum=0;     //Çå¿ÕÂË²¨¼ÆÊý
+C51 COMPILER V9.00   MAIN                                                                  01/23/2020 12:20:22 PAGE 3   
+
+ 118   4              CheckNum=0; 
+ 119   4            }
+ 120   3            }
+ 121   2                if(ReportLater>= 15)  //15s
+ 122   2          {
+ 123   3            LED=0;  
+ 124   3                      
+ 125   3            uartSendStr("AT+CMGF=1\r\n",11);
+ 126   3            for(i=0;i<4;i++)
+ 127   3              DelayMs(100);          //ÑÓÊ±ÓÐÖúÓÚÎÈ¶¨
+ 128   3      
+ 129   3              uartSendStr("AT+CSCS=\"GSM\"\r\n",15);
+ 130   3            for(i=0;i<4;i++)
+ 131   3              DelayMs(100);          //ÑÓÊ±ÓÐÖúÓÚÎÈ¶¨
+ 132   3      
+ 133   3            uartSendStr("AT+CMGS=\"+8613077317956\"\r\n",26); //¿ÉÒÔÐÞ¸Äµç»°ºÅÂë
+ 134   3      //      uartSendStr("AT+CMGS=\"+8613661848681\"\r\n",26); //¿ÉÒÔÐÞ¸Äµç»°ºÅÂë
+ 135   3            for(i=0;i<3;i++)
+ 136   3              DelayMs(100);          //ÑÓÊ±ÓÐÖúÓÚÎÈ¶¨
+ 137   3      
+ 138   3            uartSendStr("Dangerous!",10);//·¢ËÍÎ£ÏÕÐÍºÅ
+ 139   3            uartSendStr(Lin0_No,12);//·¢ËÍ¶ÌÐÅÄÚÈÝ ÔÚgpsÊý¾Ý´¦ÀíÇé¿ö  
+ 140   3            uartSendStr(Lin1_Ea,12);
+ 141   3            DelayMs(100);
+ 142   3                uartSendStr( (uchar *)Crtl_Z, 1);        //·¢ËÍ
+ 143   3            for(i=0;i<30;i++)
+ 144   3              DelayMs(100);          //ÑÓÊ±ÓÐÖúÓÚÎÈ¶¨
+ 145   3            ReportLater=0;
+ 146   3            LED=1;         //ÉÏ±¨Íí³ÌÐò ²ÎÊý³õÊ¼»¯
+ 147   3            keyLater=0;
+ 148   3          }
+ 149   2          if(key==0)     //°´¼ü´¦Àí
+ 150   2          {
+ 151   3            DelayMs(10);    //°´¼üÏû¶¶¶¯
+ 152   3            if(key==0)
+ 153   3            {
+ 154   4              ReportLater=0;    //°´¼üÑÓÊ±ÉÏ±¨
+ 155   4              buzzer=1;    //¹Ø±Õ·äÃùÆ÷
+ 156   4              keyLater=0;   //°´¼üÑÓÊ±´¦Àí
+ 157   4            }
+ 158   3          }
+ 159   2        }
+ 160   1      }
+ 161          
+ 162          void gpsDealfun(void)
+ 163          {
+ 164   1        unsigned char num=0;
+ 165   1        unsigned long Mid_Du;       //ÖÐ¼ä±äÁ¿ ÔÝ´æ¾­Î³¶ÈµÄÕûÊý²¿·Ö ¼´¶È
+ 166   1        unsigned long Mid_Fen;      //ÖÐ¼ä±äÁ¿ ÔÝ´æ¾­Î³¶ÈµÄÐ¡Êý²¿·Ö ¼´·Ö  gpsÔ­Ê¼Êý¾ÝÊÇ¶È·ÖÃë¸ñÊ½
+ 167   1        unsigned long Mid_Vale;     ////ÖÐ¼ä±äÁ¿ ÔÝ´æ¾­Î³¶È ²¢½«ÆäÀ©´óÁË10000000±¶
+ 168   1      
+ 169   1        if(sysmode_GPS==TRUE)   //¼ì²âgpsÊÇ·ñÓÐÐ§Êý¾Ý
+ 170   1        {
+ 171   2          sysmode_GPS=FALSE;      //Çå³ýÓÐÐ§Î»
+ 172   2      
+ 173   2              Mid_Du=(gps_infor_weijing[0]-0x30)*10000000+(gps_infor_weijing[1]-0x30)*1000000;    //´¦ÀíÎ³¶È ÔÝ´
+             -æÕûÊý²¿·ÖÀ©´ó10000000
+ 174   2              
+ 175   2              Mid_Fen=(gps_infor_weijing[2]-0x30)*10000000+(gps_infor_weijing[3]-0x30)*1000000+
+ 176   2                (gps_infor_weijing[4]-0x30)*100000+(gps_infor_weijing[5]-0x30)*10000+
+ 177   2                  (gps_infor_weijing[6]-0x30)*1000+(gps_infor_weijing[7]-0x30)*100;        //´¦ÀíÎ³¶È ÔÝ´æÐ¡Êý²¿
+             -·ÖÀ©´ó10000000       
+C51 COMPILER V9.00   MAIN                                                                  01/23/2020 12:20:22 PAGE 4   
+
+ 178   2              Mid_Fen=Mid_Fen/60;                                                     //·ÖÃë»»ËãÎªÐ¡ÊýÎ»
+ 179   2              Mid_Vale=Mid_Du+Mid_Fen;        //×îÖÕÎ³¶È ¸ñÊ½Îª000.00000000 ·Ç¶È·ÖÃë¸ñÊ½
+ 180   2              Lin0_No[0]='N';                  
+ 181   2          Lin0_No[1]=':';                  
+ 182   2          Lin0_No[2]='0';                  
+ 183   2              Lin0_No[3]=Mid_Vale/10000000+0x30;                  //½«´¦ÀíºóµÄÎ³¶ÈÌîÈë×Ö·û´® ²¢´òÓ¡ÏÔÊ¾
+ 184   2              Lin0_No[4]=(Mid_Vale/1000000)%10+0x30;
+ 185   2              Lin0_No[5]='.';
+ 186   2              Lin0_No[6]=(Mid_Vale/100000)%10+0x30;
+ 187   2              Lin0_No[7]=(Mid_Vale/10000)%10+0x30;
+ 188   2              Lin0_No[8]=(Mid_Vale/1000)%10+0x30;
+ 189   2              Lin0_No[9]=(Mid_Vale/100)%10+0x30;
+ 190   2              Lin0_No[10]=(Mid_Vale/10)%10+0x30;
+ 191   2              Lin0_No[11]=Mid_Vale%10+0x30;
+ 192   2              
+ 193   2              Mid_Du=(gps_infor_weijing[8]-0x30)*100000000+(gps_infor_weijing[9]-0x30)*10000000+(gps_infor_weiji
+             -ng[10]-0x30)*1000000; //´¦Àí¾­¶È ÔÝ´æÕûÊý²¿·ÖÀ©´ó10000000
+ 194   2              
+ 195   2              Mid_Fen=(gps_infor_weijing[11]-0x30)*10000000+(gps_infor_weijing[12]-0x30)*1000000+
+ 196   2                (gps_infor_weijing[13]-0x30)*100000+(gps_infor_weijing[14]-0x30)*10000+
+ 197   2                  (gps_infor_weijing[15]-0x30)*1000+(gps_infor_weijing[16]-0x30)*100; //´¦Àí¾­¶È ÔÝ´æÐ¡Êý²¿·ÖÀ©´
+             -ó10000000       
+ 198   2              Mid_Fen=Mid_Fen/60;                                                //·ÖÃë»»ËãÎªÐ¡ÊýÎ»
+ 199   2              Mid_Vale=Mid_Du+Mid_Fen;                                          //×îÖÕ¾­¶È ¸ñÊ½Îª000.00000000 ·Ç
+             -¶È·ÖÃë¸ñÊ½
+ 200   2              Lin1_Ea[0]='E';                  
+ 201   2          Lin1_Ea[1]=':';     
+ 202   2              Lin1_Ea[2]=Mid_Vale/100000000+0x30;                            //½«´¦ÀíºóµÄ¾­¶ÈÌîÈë×Ö·û´® ²¢´òÓ¡ÏÔ
+             -Ê¾
+ 203   2              Lin1_Ea[3]=(Mid_Vale/10000000)%10+0x30;
+ 204   2              Lin1_Ea[4]=(Mid_Vale/1000000)%10+0x30;
+ 205   2              Lin1_Ea[5]='.';
+ 206   2              Lin1_Ea[6]=(Mid_Vale/100000)%10+0x30;
+ 207   2              Lin1_Ea[7]=(Mid_Vale/10000)%10+0x30;
+ 208   2              Lin1_Ea[8]=(Mid_Vale/1000)%10+0x30;
+ 209   2              Lin1_Ea[9]=(Mid_Vale/100)%10+0x30;
+ 210   2              Lin1_Ea[10]=(Mid_Vale/10)%10+0x30;
+ 211   2              Lin1_Ea[11]=Mid_Vale%10+0x30;
+ 212   2             
+ 213   2        }
+ 214   1        else
+ 215   1        {
+ 216   2              Lin1_Ea[0]='G';               //ÎÞgpsÐÅºÅÇé¿öÏÂ ´òÓ¡ÕýÔÚÁ¬½Ó
+ 217   2          Lin1_Ea[1]='P';                  
+ 218   2          Lin1_Ea[2]='S';                  
+ 219   2              Lin1_Ea[3]=' ';                  /*½«´¦ÀíºóµÄÎ³¶ÈÌîÈë×Ö·û´® ²¢´òÓ¡ÏÔÊ¾*/
+ 220   2              Lin1_Ea[4]='L';
+ 221   2              Lin1_Ea[5]='I';
+ 222   2              Lin1_Ea[6]='N';
+ 223   2              Lin1_Ea[7]='K';
+ 224   2              Lin1_Ea[8]='I';
+ 225   2              Lin1_Ea[9]='N';
+ 226   2              Lin1_Ea[10]='G';
+ 227   2              Lin1_Ea[11]='.';Lin1_Ea[12]='.';Lin1_Ea[13]='.';
+ 228   2          for(i=0;i<14;i++)
+ 229   2          {
+ 230   3            Lin0_No[i]=Lin1_Ea[i];
+ 231   3          }
+ 232   2        }
+ 233   1      //  DelayMs(10);
+ 234   1      //  SendStr(Lin0_No,12);
+ 235   1      //  DelayMs(10);
+C51 COMPILER V9.00   MAIN                                                                  01/23/2020 12:20:22 PAGE 5   
+
+ 236   1      //  SendStr(Lin1_Ea,12);
+ 237   1      }
+ 238          
+ 239          
+ 240          
+ 241          void Init_Timer0(void)
+ 242          {
+ 243   1        TMOD |= 0x01;   //Ê¹ÓÃÄ£Ê½1£¬16Î»¶¨Ê±Æ÷£¬Ê¹ÓÃ"|"·ûºÅ¿ÉÒÔÔÚÊ¹ÓÃ¶à¸ö¶¨Ê±Æ÷Ê±²»ÊÜÓ°Ïì         
+ 244   1        TH0=(65536-20000)/256;      //ÖØÐÂ¸³Öµ 20ms
+ 245   1        TL0=(65536-20000)%256;
+ 246   1        EA=1;            //×ÜÖÐ¶Ï´ò¿ª
+ 247   1        ET0=1;           //¶¨Ê±Æ÷ÖÐ¶Ï´ò¿ª
+ 248   1        TR0=1;           //¶¨Ê±Æ÷¿ª¹Ø´ò¿ª
+ 249   1      }
+ 250          
+ 251          void Timer0_isr(void) interrupt 1 
+ 252          {
+ 253   1        TH0=(65536-20000)/256;      //ÖØÐÂ¸³Öµ 20ms
+ 254   1        TL0=(65536-20000)%256;
+ 255   1        time_20ms++;
+ 256   1        if(time_20ms%10==0)   //¶¨Ê±¶ÁÈ¡adxl345Êý¾Ý
+ 257   1        {
+ 258   2          ReadAdxl345=TRUE;
+ 259   2        }
+ 260   1        if(time_20ms%50==0)     //ÑÓÊ±¶¨Ê±ÉÏ±¨
+ 261   1        {
+ 262   2          ReportLater++;
+ 263   2          keyLater++;     //°´¼üÑÓÊ±ÉÏ±¨¼ÆÊý
+ 264   2          dealGpsMes++;
+ 265   2        }
+ 266   1      
+ 267   1      }
+ 268          
+ 269          void UART_Init(void)
+ 270          {
+ 271   1          SCON  = 0x50;           // SCON: Ä£Ê½ 1, 8-bit UART, Ê¹ÄÜ½ÓÊÕ  
+ 272   1          TMOD |= 0x20;               // TMOD: timer 1, mode 2, 8-bit ÖØ×°
+ 273   1          TH1   = 0xFD;               // TH1:  ÖØ×°Öµ 9600 ²¨ÌØÂÊ ¾§Õñ 11.0592MHz
+ 274   1        TL1 = TH1;  
+ 275   1          TR1   = 1;                  // TR1:  timer 1 ´ò¿ª                         
+ 276   1          EA    = 1;                  //´ò¿ª×ÜÖÐ¶Ï
+ 277   1          ES    = 1;                  //´ò¿ª´®¿ÚÖÐ¶Ï
+ 278   1      }
+ 279          
+ 280          void uartSendByte(unsigned char dat)//´®¿Ú·¢ËÍµ¥×Ö½ÚÊý¾Ý
+ 281          {
+ 282   1        unsigned char time_out;
+ 283   1        time_out=0x00;
+ 284   1        SBUF = dat;       //½«Êý¾Ý·ÅÈëSBUFÖÐ
+ 285   1        while((!TI)&&(time_out<100))  //¼ì²âÊÇ·ñ·¢ËÍ³öÈ¥
+ 286   1        {time_out++;DelayUs2x(10);} //Î´·¢ËÍ³öÈ¥ ½øÐÐ¶ÌÔÝÑÓÊ±
+ 287   1        TI = 0;           //Çå³ýti±êÖ¾
+ 288   1      }
+ 289          
+ 290          void uartSendStr(unsigned char *s,unsigned char length)    //·¢ËÍ¶¨³¤¶È×Ö·û´®
+ 291          {
+ 292   1        unsigned char NUM;
+ 293   1        NUM=0x00;
+ 294   1        while(NUM<length) //·¢ËÍ³¤¶È¶Ô±È
+ 295   1        {
+ 296   2          uartSendByte(*s);  //·ÅËÉµ¥×Ö½ÚÊý¾Ý
+ 297   2          s++;      //Ö¸Õë++
+C51 COMPILER V9.00   MAIN                                                                  01/23/2020 12:20:22 PAGE 6   
+
+ 298   2          NUM++;      //ÏÂÒ»¸ö++
+ 299   2           }
+ 300   1      }
+ 301          
+ 302          void UART_SER (void) interrupt 4 //´®ÐÐÖÐ¶Ï·þÎñ³ÌÐò
+ 303          {
+ 304   1          if(RI)                        //ÅÐ¶ÏÊÇ½ÓÊÕÖÐ¶Ï²úÉú
+ 305   1          {
+ 306   2          RI=0;                      //±êÖ¾Î»ÇåÁã
+ 307   2          uart1_r_buf=SBUF;                      //ÌáÈ¡bufÖÐµÄÖµ
+ 308   2          rev1_buf_busy=0x00;                         //ÅÐ±ð ·ÅÖÃbreakÎÊÌâ
+ 309   2          switch(recv1_step)
+ 310   2          {
+ 311   3          case STAGE_SOHE: if(uart1_r_buf == '$')     //ÅÐ¶Ï½ÓÊÕµ½ÁË$  ¾ßÌåÔ­Òò²Î¿¼GPS±ê×¼Ð­ÒéNMEA0183
+ 312   3          {
+ 313   4            rev1_buf_busy=0x01;
+ 314   4            if(uart1_r_buf == '$')              //ÔÙ´Î²é¿´½ÓÊÕµÄÊÇ·ñÊÇ$
+ 315   4            {
+ 316   5              recv1_step=STAGE_TYPE;            //Ìø×ªµ½ÏÂÒ»²½
+ 317   5              record1=0;                        //¼ÆÊýÇåÁã
+ 318   5            }
+ 319   4            else
+ 320   4            {
+ 321   5              recv1_step=STAGE_SOHE;        //»Ö¸´³õÊ¼»¯
+ 322   5              record1=0;
+ 323   5            }
+ 324   4          }
+ 325   3          break;
+ 326   3          case STAGE_TYPE: if(rev1_buf_busy == 0x00)
+ 327   3          {
+ 328   4      
+ 329   4            rev1_buf_busy=0x01;
+ 330   4            temp1_buf[record1]=uart1_r_buf;
+ 331   4            record1++;
+ 332   4            if(record1 == 0x05)
+ 333   4            {                                                 //²é¿´$GPRMC¿ªÍ·µÄÃüÁîÐÐ
+ 334   5              if((temp1_buf[0] == 'G') && (temp1_buf[1] == 'P') && (temp1_buf[2] == 'R') && (temp1_buf[3] == 'M')
+             - && (temp1_buf[4] == 'C'))
+ 335   5              {
+ 336   6                recv1_step=STAGE_NONE;    //Ìø×ªµ½ÏÂÒ»²½
+ 337   6                record1=0;
+ 338   6              } 
+ 339   5              else
+ 340   5              {
+ 341   6                recv1_step=STAGE_SOHE;//»Ö¸´³õÊ¼»¯
+ 342   6                record1=0;
+ 343   6              }
+ 344   5            }
+ 345   4          }
+ 346   3          break;
+ 347   3          case STAGE_NONE: if(rev1_buf_busy == 0x00)//½ÓÊÕÃüÁî¸ñÊ½£º$GPRMC,054347.00,A,3202.04770,N,11846.23632,E
+             -,0.000,0.00,221013,,,A*67
+ 348   3          {
+ 349   4            rev1_buf_busy=0x01;
+ 350   4            record1++;
+ 351   4            if((record1 > 0x01) && (record1 < 0x08))                                                             
+             -                       
+ 352   4            {
+ 353   5              gps_infor_time[record1-2]=uart1_r_buf;      //Ê±¼ä´æ´¢            
+ 354   5            }
+ 355   4            if((uart1_r_buf == ',') && (record1 > 0x07) && (record1 < 0x010))   //||((uart1_r_buf == ',') && (rec
+             -ord1==0x02))
+C51 COMPILER V9.00   MAIN                                                                  01/23/2020 12:20:22 PAGE 7   
+
+ 356   4            {
+ 357   5              record1=0xcc;
+ 358   5            }
+ 359   4            if(record1 ==  0xcd)
+ 360   4            {
+ 361   5              record1=0;
+ 362   5              devide_flag=2;
+ 363   5              speed_end=0x00;
+ 364   5              dir_end=0x00;
+ 365   5              if(uart1_r_buf == 'A')  //gpsÊÕµ½Êý¾Ý ÇÒÓÐÐ§
+ 366   5              { 
+ 367   6                recv1_step=STAGE_DATA;    //Ìø×ªµ½ÏÂÒ»²½
+ 368   6              }
+ 369   5              else
+ 370   5              {
+ 371   6                sysmode_GPS=FALSE;
+ 372   6                recv1_step=STAGE_SOHE;    //ÎÞÐ§»Ö¸´³õÊ¼»¯
+ 373   6                record1=0;
+ 374   6              }
+ 375   5            }
+ 376   4          }
+ 377   3          break;
+ 378   3          case STAGE_DATA:  if(rev1_buf_busy == 0x00)
+ 379   3          {
+ 380   4            rev1_buf_busy=0x01;
+ 381   4            record1++;
+ 382   4            if(uart1_r_buf == ',')    //ÅÐ¶Ï¶ººÅ
+ 383   4            { 
+ 384   5              devide_flag++;      //¶ººÅ´ÎÊý¼ÇÂ¼
+ 385   5              record1=0;
+ 386   5            }
+ 387   4            if(devide_flag == 3)
+ 388   4            {
+ 389   5              if((record1 > 0) && (record1 < 5))
+ 390   5              {
+ 391   6                gps_infor_weijing[record1-1]=uart1_r_buf;     //´æ´¢¾­Î³¶È ´Ë´¦ÎªÎ³¶È             
+ 392   6              }
+ 393   5              if((record1 > 5) && (record1 < 10))             //Ìø¹ýÐ¡ÊýµãµÄ´æ´¢
+ 394   5              {
+ 395   6                gps_infor_weijing[record1-2]=uart1_r_buf;    //´æ´¢¾­Î³¶È ´Ë´¦ÎªÎ³¶È                              
+ 396   6              }
+ 397   5            }
+ 398   4            if(devide_flag == 4)
+ 399   4            {
+ 400   5              if(record1 > 0)
+ 401   5              {
+ 402   6                ns_flag=uart1_r_buf;            //½ÓÊÕÎ³¶ÈNS±êÖ¾
+ 403   6              }
+ 404   5            }
+ 405   4            if(devide_flag == 5)
+ 406   4            {
+ 407   5              if((record1 > 0) && (record1 < 6))
+ 408   5              {
+ 409   6                gps_infor_weijing[record1+7]=uart1_r_buf;   //´æ´¢¾­Î³¶È ´Ë´¦ÎªÎ³¶È                   
+ 410   6              }
+ 411   5              if((record1 > 6) && (record1 < 11))                //Ìø¹ýÐ¡ÊýµãµÄ´æ´¢
+ 412   5              {
+ 413   6                gps_infor_weijing[record1+6]=uart1_r_buf;       //´æ´¢¾­Î³¶È ´Ë´¦Îª¾­¶È                                     
+ 414   6              }
+ 415   5            }
+ 416   4            if(devide_flag == 6)
+ 417   4            {
+C51 COMPILER V9.00   MAIN                                                                  01/23/2020 12:20:22 PAGE 8   
+
+ 418   5              if(record1 > 0)
+ 419   5              {
+ 420   6                ew_flag=uart1_r_buf;            //¾­¶È¶È EW±êÖ¾
+ 421   6              }
+ 422   5            }
+ 423   4            if(devide_flag == 7)
+ 424   4            {
+ 425   5              if(speed_end == 0x00)
+ 426   5              {
+ 427   6                if((record1 > 0) && (uart1_r_buf != '.'))
+ 428   6                {
+ 429   7                  gps_infor_speed[record1-1]=uart1_r_buf;   //½ÓÊÕËÙÂÊ
+ 430   7                }
+ 431   6                else if(uart1_r_buf == '.')
+ 432   6                {
+ 433   7                  record1--;
+ 434   7                  speed_end=0xff;
+ 435   7                }
+ 436   6              }
+ 437   5              else if(speed_end == 0xff)
+ 438   5              {
+ 439   6                speed_end=0xfe;
+ 440   6                gps_infor_speed[record1-1]=uart1_r_buf;
+ 441   6                gps_infor_speed[3]=gps_infor_speed[record1-1];
+ 442   6                gps_infor_speed[2]=gps_infor_speed[record1-2];
+ 443   6                if(record1 > 2)
+ 444   6                {
+ 445   7                  gps_infor_speed[1]=gps_infor_speed[record1-3];
+ 446   7                }
+ 447   6                else
+ 448   6                {
+ 449   7                  gps_infor_speed[1]=0x30;
+ 450   7                }
+ 451   6                if(record1 > 3)
+ 452   6                {
+ 453   7                  gps_infor_speed[0]=gps_infor_speed[record1-4];
+ 454   7                }
+ 455   6                else
+ 456   6                {
+ 457   7                  gps_infor_speed[0]=0x30;
+ 458   7                }
+ 459   6              }
+ 460   5            }
+ 461   4            if(devide_flag == 8)
+ 462   4            {
+ 463   5              if(dir_end == 0x00)
+ 464   5              {
+ 465   6                if((record1 > 0) && (uart1_r_buf != '.'))
+ 466   6                {
+ 467   7                  gps_infor_dir[record1-1]=uart1_r_buf;   //´æ´¢·½Ïò
+ 468   7                }
+ 469   6                else if(uart1_r_buf == '.')
+ 470   6                {
+ 471   7                  record1--;
+ 472   7                  dir_end=0xff;
+ 473   7                }
+ 474   6              }
+ 475   5              else if(dir_end == 0xff)
+ 476   5              {
+ 477   6                dir_end=0xfe;
+ 478   6                if(record1 == 2)
+ 479   6                {
+C51 COMPILER V9.00   MAIN                                                                  01/23/2020 12:20:22 PAGE 9   
+
+ 480   7                  gps_infor_dir[2]=gps_infor_dir[record1-2];
+ 481   7                  gps_infor_dir[1]=0x30;
+ 482   7                  gps_infor_dir[0]=0x30;
+ 483   7                }
+ 484   6                if(record1 == 3)
+ 485   6                {
+ 486   7                  gps_infor_dir[2]=gps_infor_dir[record1-2];
+ 487   7                  gps_infor_dir[1]=gps_infor_dir[record1-3];
+ 488   7                  gps_infor_dir[0]=0x30;
+ 489   7                }
+ 490   6              }
+ 491   5            }
+ 492   4            if(devide_flag == 9)
+ 493   4            {
+ 494   5              if((record1 > 0) && (record1 < 7))
+ 495   5              {
+ 496   6                gps_infor_date[record1-1]=uart1_r_buf;
+ 497   6              }
+ 498   5            }
+ 499   4            if(uart1_r_buf == 0x0d)
+ 500   4            {
+ 501   5              recv1_step=STAGE_SOHE;    //½ÓÊÕÍê³É ²¢ÐÅºÅÈ·¶¨ 
+ 502   5              record1=0;                //»Ö¸´³õÊ¼»¯×´Ì¬ ÎªÏÂÒ»´Î×¼±¸
+ 503   5              devide_flag=0;
+ 504   5              sysmode_GPS=TRUE;         //ÖÃÎ» GPS ÐÅºÅÎªÕýÈ·
+ 505   5            }
+ 506   4          }
+ 507   3          break;                          
+ 508   3          }
+ 509   2        }
+ 510   1         if(TI)  //Èç¹ûÊÇ·¢ËÍ±êÖ¾Î»£¬ÇåÁã
+ 511   1        TI=0;
+ 512   1      }
+ 513           
+ 514          
+ 515          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   3421    ----
+   CONSTANT SIZE    =     75    ----
+   XDATA SIZE       =    157    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     32      19
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
